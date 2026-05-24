@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Inventory Management System</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- html5-qrcode for barcode scanning -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <!-- jsPDF and AutoTable for PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: { primary: '#2563eb' }
+          }
+        }
+      }
+    </script>
+    <style>
+      /* Ensure modal is above everything */
+      .modal { z-index: 9999; }
+      body { 
+        background-color: #f3f4f6; 
+        font-family: 'Google Sans', 'Noto Sans Thai', sans-serif;
+      }
+    </style>
+  </head>
+  <body class="text-gray-800">
+    <div id="app" class="max-w-5xl mx-auto p-4 sm:p-6 lg:p-8">
+      
+      <header class="mb-6">
+        <h1 class="text-2xl sm:text-3xl font-bold text-gray-900 mb-4 border-b pb-4">ระบบจัดการคลังเสาเข็ม</h1>
+        <div class="flex space-x-2 border-b overflow-x-auto whitespace-nowrap">
+          <button @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'text-primary border-b-2 border-primary font-semibold' : 'text-gray-500 hover:text-gray-700 font-medium'" class="px-4 py-3 -mb-[1px] transition-colors">
+            แดชบอร์ด
+          </button>
+          <button @click="currentTab = 'form'" :class="currentTab === 'form' ? 'text-primary border-b-2 border-primary font-semibold' : 'text-gray-500 hover:text-gray-700 font-medium'" class="px-4 py-3 -mb-[1px] transition-colors">
+            บันทึกรายการ
+          </button>
+          <button @click="currentTab = 'history'" :class="currentTab === 'history' ? 'text-primary border-b-2 border-primary font-semibold' : 'text-gray-500 hover:text-gray-700 font-medium'" class="px-4 py-3 -mb-[1px] transition-colors bg-transparent">
+            ประวัติรายการ
+          </button>
+        </div>
+      </header>
+
+      <div>
+        
+        <!-- Dashboard -->
+        <div v-show="currentTab === 'dashboard'" class="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100 max-w-5xl mx-auto">
+          <div class="flex justify-between items-center mb-4 border-b pb-2">
+            <h2 class="text-xl font-semibold">สรุปจำนวนคงเหลือ</h2>
+            <button @click="loadData" class="text-gray-600 hover:text-gray-900 px-3 py-1.5 bg-gray-100 rounded-md text-sm font-medium transition-colors">รีเฟรช</button>
+          </div>
+
+          <div class="mb-6 relative">
+            <input type="text" v-model="searchQuery" placeholder="ค้นหาหมายเลขเสา หรือ ชื่องานก่อสร้าง..." class="w-full border border-gray-300 rounded-md pl-10 pr-4 py-2 outline-none focus:ring-2 focus:ring-primary">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg class="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd" />
+              </svg>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+             <div v-if="isLoading" class="col-span-full py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</div>
+             <div v-else-if="filteredDashboardData.length === 0" class="col-span-full py-8 text-center text-gray-500">ไม่พบหมายเลขเสาหรือชื่องานก่อสร้างที่ค้นหา</div>
+             
+             <div v-for="item in filteredDashboardData" :key="item.poleId" @click="openFormForPole(item)" class="border rounded-lg p-4 bg-blue-50/30 border-blue-100 shadow-sm flex flex-col justify-between cursor-pointer hover:shadow-md hover:border-blue-300 hover:bg-blue-50 transition-all">
+                <div class="text-xs text-gray-500 mb-1 line-clamp-1 truncate" :title="item.project">{{ item.project }}</div>
+                <div class="font-mono font-bold text-lg text-gray-900 break-all">{{ item.poleId }}</div>
+                <div class="mt-4 flex justify-between items-end">
+                   <span class="text-sm font-medium text-gray-600">คงเหลือ</span>
+                   <span class="text-3xl font-bold text-primary">{{ item.balance }}</span>
+                </div>
+             </div>
+          </div>
+        </div>
+
+        <!-- Transaction Form -->
+        <div v-show="currentTab === 'form'" class="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100 max-w-2xl mx-auto">
+          <h2 class="text-xl font-semibold mb-4 pb-2">บันทึกรายการใหม่</h2>
+          
+          <form @submit.prevent="submitTransaction" class="space-y-4">
+            
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">วดป. (Date/Time)</label>
+              <input type="datetime-local" v-model="formData.date" required class="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+            </div>
+            
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">หมายเลขงาน (Job ID)</label>
+              <input type="text" v-model="formData.jobId" required placeholder="Ex: JOB-001" class="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-primary">
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ชื่องานก่อสร้าง (Project)</label>
+              <input type="text" v-model="formData.project" required placeholder="Ex: โครงการ A" class="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-primary">
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">หมายเลขเสา (Pole ID)</label>
+              <div class="flex space-x-2">
+                <input type="text" v-model="formData.poleId" required placeholder="Ex: P-001" class="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-primary">
+                <button type="button" @click="openScanner" class="bg-gray-800 text-white px-3 py-2 rounded-md hover:bg-gray-700 flex-shrink-0 transition-colors">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect width="10" height="8" x="7" y="8" rx="1"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">รับ (Stock In)</label>
+                <input type="number" min="0" step="1" v-model="formData.receive" @input="formData.dispense = 0" class="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-green-500">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">จ่าย (Stock Out)</label>
+                <input type="number" min="0" step="1" v-model="formData.dispense" @input="formData.receive = 0" class="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-red-500">
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">ผู้เบิก / ผู้ส่งคืน</label>
+              <input type="text" v-model="formData.personnel" required placeholder="Ex: นาย กชัย" class="w-full border border-gray-300 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-primary">
+            </div>
+            
+            <!-- Web App URL Setup Reminder -->
+            <div v-if="!scriptUrl" class="p-3 bg-yellow-50 text-yellow-800 rounded-md text-sm border border-yellow-200">
+              ⚠️ กรุณาตั้งค่า Google Apps Script Web App URL ในโค้ดก่อนใช้งาน
+            </div>
+
+            <button type="submit" :disabled="isSubmitting || !scriptUrl" class="w-full bg-primary text-white font-medium py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex justify-center items-center">
+              <span v-if="isSubmitting">กำลังบันทึก...</span>
+              <span v-else>บันทึกข้อมูล (Submit)</span>
+            </button>
+            <div v-if="submitMessage" :class="submitError ? 'text-red-500' : 'text-green-600'" class="text-sm mt-2 font-medium text-center">
+              {{ submitMessage }}
+            </div>
+          </form>
+        </div>
+
+        <!-- Inventory Table -->
+        <div v-show="currentTab === 'history'" class="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full max-w-5xl mx-auto">
+          <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 border-b pb-2 gap-4">
+            <h2 class="text-xl font-semibold">ประวัติรายการ (Transactions)</h2>
+            <div class="flex flex-wrap gap-2">
+              <button @click="loadData" class="text-gray-600 hover:text-gray-900 px-3 py-1.5 bg-gray-100 rounded-md text-sm font-medium transition-colors">รีเฟรช</button>
+              <button @click="exportExcel" class="text-green-700 hover:text-green-900 px-3 py-1.5 bg-green-50 rounded-md border border-green-200 text-sm font-medium transition-colors">Export Excel</button>
+              <button @click="exportPDF" class="text-red-700 hover:text-red-900 px-3 py-1.5 bg-red-50 rounded-md border border-red-200 text-sm font-medium transition-colors">Export PDF</button>
+            </div>
+          </div>
+          
+          <div class="overflow-x-auto flex-grow w-full">
+            <table class="min-w-full text-sm text-left whitespace-nowrap">
+              <thead class="text-xs text-gray-700 uppercase bg-gray-50 border-y border-gray-200">
+                <tr>
+                  <th class="px-4 py-3">วดป.</th>
+                  <th class="px-4 py-3">หมายเลขงาน</th>
+                  <th class="px-4 py-3">งานก่อสร้าง</th>
+                  <th class="px-4 py-3">หมายเลขเสา</th>
+                  <th class="px-4 py-3 bg-green-50">รับ</th>
+                  <th class="px-4 py-3 bg-red-50">จ่าย</th>
+                  <th class="px-4 py-3 font-bold bg-blue-50">คงเหลือ</th>
+                  <th class="px-4 py-3">ผู้เบิก/ส่งคืน</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-if="isLoading" class="border-b">
+                  <td colspan="8" class="px-4 py-8 text-center text-gray-500">กำลังโหลดข้อมูล...</td>
+                </tr>
+                <tr v-else-if="inventoryData.length === 0" class="border-b">
+                  <td colspan="8" class="px-4 py-8 text-center text-gray-500">ไม่มีข้อมูล หรือยังไม่ได้เชื่อมต่อ Google Apps Script</td>
+                </tr>
+                <tr v-for="(item, index) in inventoryData" :key="index" class="border-b hover:bg-gray-50 transition-colors">
+                  <td class="px-4 py-2 text-gray-600">{{ formatDate(item['วดป.']) }}</td>
+                  <td class="px-4 py-2 font-medium">{{ item['หมายเลขงาน'] }}</td>
+                  <td class="px-4 py-2">{{ item['ชื่องานก่อสร้าง'] }}</td>
+                  <td class="px-4 py-2 font-mono text-xs">{{ item['หมายเลขเสา'] }}</td>
+                  <td class="px-4 py-2 text-green-600 font-medium">{{ item['รับ'] }}</td>
+                  <td class="px-4 py-2 text-red-600 font-medium">{{ item['จ่าย'] }}</td>
+                  <td class="px-4 py-2 font-bold">{{ item['คงเหลือ'] }}</td>
+                  <td class="px-4 py-2 text-gray-600">{{ item['ผู้เบิก / ผู้ส่งคืน'] }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      
+      <!-- Scanner Modal -->
+      <div v-if="isScanning" class="fixed inset-0 bg-black/80 flex justify-center items-center p-4 modal">
+        <div class="bg-white rounded-lg p-4 w-full max-w-md">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="font-bold text-lg">สแกนบาร์โค้ด</h3>
+            <button @click="closeScanner" class="text-gray-500 hover:text-gray-900 font-bold p-1">&times;</button>
+          </div>
+          <div id="reader" class="w-full bg-gray-100 min-h-[300px]"></div>
+          <p class="text-center text-xs text-gray-500 mt-2">หันกล้องไปที่บาร์โค้ด หรือ QR Code</p>
+        </div>
+      </div>
+
+    </div>
+
+    <script>
+      const { createApp, ref, onMounted, reactive, computed } = Vue;
+
+      createApp({
+        setup() {
+          // ==========================================
+          // IMPORTANT: PASTE YOUR WEB APP URL HERE!!!
+          // ==========================================
+          const scriptUrl = ref('https://script.google.com/macros/s/AKfycbxlVnvX0Hs3I0F8NN1u7RJjWN68Dk0RrCtix90N-3iCVudO643TMM5owZ9veIh-vL_FXg/exec'); // Example: 'https://script.google.com/macros/s/AKfycb.../exec'
+
+          const currentTab = ref('dashboard'); // 'dashboard', 'form' or 'history'
+
+          const formData = reactive({
+            date: new Date().toISOString().slice(0, 16),
+            jobId: '',
+            project: '',
+            poleId: '',
+            receive: 0,
+            dispense: 0,
+            personnel: ''
+          });
+
+          const inventoryData = ref([]);
+          const isSubmitting = ref(false);
+          const isLoading = ref(false);
+          const submitMessage = ref('');
+          const submitError = ref(false);
+          const searchQuery = ref('');
+          
+          const isScanning = ref(false);
+          let html5QrcodeScanner = null;
+
+          const openFormForPole = (item) => {
+            formData.poleId = item.poleId;
+            formData.project = item.project;
+            formData.date = new Date().toISOString().slice(0, 16);
+            formData.receive = 0;
+            formData.dispense = 0;
+            currentTab.value = 'form';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+          };
+
+          const dashboardData = computed(() => {
+            const latestBalances = {};
+            inventoryData.value.forEach(item => {
+              const poleId = item['หมายเลขเสา'];
+              // Since the history is reversed (newest first), the first occurrence is latest
+              if (!latestBalances[poleId]) {
+                latestBalances[poleId] = {
+                  poleId: poleId,
+                  project: item['ชื่องานก่อสร้าง'],
+                  balance: parseFloat(item['คงเหลือ']) || 0
+                };
+              }
+            });
+            
+            return Object.values(latestBalances)
+              .filter(item => item.balance > 0)
+              .sort((a, b) => a.poleId.localeCompare(b.poleId));
+          });
+
+          const filteredDashboardData = computed(() => {
+            if (!searchQuery.value) return dashboardData.value;
+            const query = searchQuery.value.toLowerCase();
+            return dashboardData.value.filter(item => 
+              (item.poleId && item.poleId.toLowerCase().includes(query)) || 
+              (item.project && item.project.toLowerCase().includes(query))
+            );
+          });
+
+          const loadData = async () => {
+            if (!scriptUrl.value) {
+                console.warn("Script URL not configured.");
+                return;
+            }
+            isLoading.value = true;
+            try {
+              const response = await fetch(`${scriptUrl.value}?action=getInventory`);
+              if (!response.ok) throw new Error('Network error');
+              const json = await response.json();
+              if (json.status === 'success') {
+                inventoryData.value = json.data;
+              }
+            } catch (err) {
+              console.error("Failed to load data:", err);
+            } finally {
+              isLoading.value = false;
+            }
+          };
+
+          const submitTransaction = async () => {
+            if (!scriptUrl.value) return;
+            
+            isSubmitting.value = true;
+            submitMessage.value = '';
+            
+            // Format for Apps Script
+            const payload = {
+              'วดป.': formData.date.replace('T', ' '),
+              'หมายเลขงาน': formData.jobId,
+              'ชื่องานก่อสร้าง': formData.project,
+              'หมายเลขเสา': formData.poleId,
+              'รับ': formData.receive > 0 ? formData.receive : 0,
+              'จ่าย': formData.dispense > 0 ? formData.dispense : 0,
+              'ผู้เบิก / ผู้ส่งคืน': formData.personnel
+            };
+
+            try {
+              // using no-cors or standard fetch depending on how the Web App is deployed
+              // For POST to Apps Script, an application/x-www-form-urlencoded is safer for CORS,
+              // but stringified JSON is used in the Code.gs via e.postData.
+              const response = await fetch(scriptUrl.value, {
+                method: 'POST',
+                body: JSON.stringify(payload),
+                headers: {
+                    // Browsers require text/plain to avoid preflight CORS issues with Google Apps Script
+                    'Content-Type': 'text/plain;charset=utf-8' 
+                }
+              });
+              
+              const result = await response.json();
+              
+              if (result.status === 'success') {
+                submitError.value = false;
+                submitMessage.value = `บันทึกสำเร็จ! ยอดคงเหลือล่าสุด: ${result.balance}`;
+                
+                // Reset numeric fields
+                formData.receive = 0;
+                formData.dispense = 0;
+                formData.poleId = '';
+                
+                // Refresh table
+                setTimeout(loadData, 1000);
+              } else {
+                throw new Error(result.error || 'Server error');
+              }
+            } catch (error) {
+              submitError.value = true;
+              submitMessage.value = `เกิดข้อผิดพลาด: ${error.message}. ` + 
+                `Make sure Apps Script is deployed as 'Anyone' and CORS is handled.`;
+            } finally {
+              isSubmitting.value = false;
+              // Clear message after 5 seconds
+              setTimeout(() => { submitMessage.value = ''; }, 5000);
+            }
+          };
+
+          const formatDate = (dateString) => {
+            if (!dateString) return '';
+            try {
+              const d = new Date(dateString);
+              if (isNaN(d.getTime())) return dateString; // fallback
+              const day = String(d.getDate()).padStart(2, '0');
+              const month = String(d.getMonth() + 1).padStart(2, '0');
+              const year = d.getFullYear() + 543;
+              const hours = String(d.getHours()).padStart(2, '0');
+              const minutes = String(d.getMinutes()).padStart(2, '0');
+              return `${day}/${month}/${year} ${hours}:${minutes} น.`;
+            } catch (e) {
+              return dateString;
+            }
+          };
+
+          // --- Barcode Scanner ---
+          const openScanner = () => {
+            isScanning.value = true;
+            // Wait for DOM to render the reader div
+            setTimeout(() => {
+              if (!html5QrcodeScanner) {
+                html5QrcodeScanner = new Html5QrcodeScanner(
+                    "reader", 
+                    { fps: 10, qrbox: { width: 250, height: 150 } }, 
+                    false 
+                );
+              }
+              html5QrcodeScanner.render((decodedText) => {
+                formData.poleId = decodedText;
+                closeScanner();
+              }, (errorMessage) => {
+                // Background scan errors can be ignored
+              });
+            }, 100);
+          };
+
+          const closeScanner = () => {
+            if (html5QrcodeScanner) {
+              try { html5QrcodeScanner.clear(); } catch(e){}
+            }
+            isScanning.value = false;
+          };
+
+          // --- Export Functions ---
+          const exportExcel = () => {
+            if (inventoryData.value.length === 0) return alert('ไม่มีข้อมูลให้ Export');
+            
+            // Format worksheet
+            const ws = XLSX.utils.json_to_sheet(inventoryData.value);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Inventory");
+            
+            const dateStr = new Date().toISOString().split('T')[0];
+            XLSX.writeFile(wb, `Inventory_Export_${dateStr}.xlsx`);
+          };
+
+          const exportPDF = () => {
+            if (inventoryData.value.length === 0) return alert('ไม่มีข้อมูลให้ Export');
+            
+            // Required for Thai Font support in jsPDF:
+            // Due to CDN constraints, we will use default jsPDF font which does not support Thai well,
+            // OR use a basic grid without complex characters. 
+            // NOTE: Full TH font support requires base64 embedding of a TTF file (THSarabun). 
+            // Since this is a template, we'll configure AutoTable standardly.
+            const doc = new jspdf.jsPDF();
+            
+            // Set up data for autotable
+            const tableColumn = ["Date", "Job ID", "Project", "Pole ID", "In", "Out", "Balance", "Personnel"];
+            const tableRows = [];
+
+            inventoryData.value.forEach(item => {
+              const rowData = [
+                formatDate(item['วดป.']),
+                item['หมายเลขงาน'],
+                item['ชื่องานก่อสร้าง'],
+                item['หมายเลขเสา'],
+                item['รับ'],
+                item['จ่าย'],
+                item['คงเหลือ'],
+                item['ผู้เบิก / ผู้ส่งคืน']
+              ];
+              tableRows.push(rowData);
+            });
+
+            doc.text("Inventory Management Summary", 14, 15);
+            doc.autoTable({
+              head: [tableColumn],
+              body: tableRows,
+              startY: 20,
+              styles: { font: "helvetica" } // Fallback font
+            });
+            
+            const dateStr = new Date().toISOString().split('T')[0];
+            doc.save(`Inventory_Report_${dateStr}.pdf`);
+          };
+
+          onMounted(() => {
+            if(scriptUrl.value) {
+                loadData();
+            }
+          });
+
+          return {
+            currentTab,
+            scriptUrl,
+            formData,
+            inventoryData,
+            dashboardData,
+            filteredDashboardData,
+            searchQuery,
+            isSubmitting,
+            isLoading,
+            submitMessage,
+            submitError,
+            submitTransaction,
+            loadData,
+            formatDate,
+            isScanning,
+            openScanner,
+            closeScanner,
+            exportExcel,
+            exportPDF,
+            openFormForPole
+          };
+        }
+      }).mount('#app');
+    </script>
+  </body>
+</html>
+
